@@ -4,7 +4,6 @@ set -x
 
 export PATH=/bin:/sbin
 
-
 mount -o move /dev /target_tmp/dev
 mount -o move /proc /target_tmp/proc
 mount -o move /sys /target_tmp/sys
@@ -15,19 +14,12 @@ mount -o move /vendor /target_tmp/vendor
 mount -o move /odm /target_tmp/odm
 #TODO: Other mount points for non-GSI (system_ext? product?)
 
-#for i in $(cat /proc/mounts |cut -d ' ' -f 2);do
-#umount $i
-#done
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t configfs none /config
 mount -t tmpfs none /dev
 mount -t tmpfs none /tmp
 mount -t pstore none /sys/fs/pstore
-
-
-
-find /vendor/firmware -name ipa\*
 
 mdev -s
 mdev -d
@@ -44,22 +36,30 @@ echo phh > $gadget/strings/0x409/serialnumber
 echo phh > $gadget/strings/0x409/manufacturer
 echo phh > $gadget/strings/0x409/product
 
+# Setup mass_storage with current dmesg + pstore
 mkdir $gadget/functions/mass_storage.0
 echo 1 > $gadget/functions/mass_storage.0/lun.0/removable
-#dd if=/dev/zero of=/tmp/tmp-img bs=1024 count=$((128*1024))
 dmesg > /tmp/tmp-img
 cat /sys/fs/pstore/* >> /tmp/tmp-img
 echo /tmp/tmp-img > $gadget/functions/mass_storage.0/lun.0/file
 
+# Setup ACM (acts as a serial port. Nothing to setup)
 mkdir $gadget/functions/acm.0
+
+# Setup NCM (acts as a network interface. Nothing to setup)
 mkdir $gadget/functions/ncm.0
+
+# Configure the gadget with all the functions
 mkdir $gadget/configs/c.1/
 mkdir $gadget/configs/c.1/strings/0x409
 echo 'ADB MTP' > $gadget/configs/c.1/strings/0x409/configuration
+
+#TODO: Error handling? what happens if one of the functions failed? We should be graceful
 ln -s $gadget/functions/ncm.0 $gadget/configs/c.1/f1
 ln -s $gadget/functions/mass_storage.0 $gadget/configs/c.1/f2
 ln -s $gadget/functions/acm.0 $gadget/configs/c.1/f3
 
+# Disable watchdogs
 echo -n V > /dev/watchdog
 echo -n V > /dev/watchdog0
 echo -n V > /dev/watchdog1
@@ -75,17 +75,12 @@ ifconfig ncm0 192.168.2.3 up
 ifconfig usb0 192.168.2.3 up
 ifconfig $(cat $gadget/functions/ncm.0/ifname) 192.168.2.3 up
 
-echo > $gadget/functions/mass_storage.0/lun.0/file
-dmesg > /tmp/tmp-img
-cat /sys/fs/pstore/* >> /tmp/tmp-img
-find /dev >> /tmp/tmp-img
-echo /tmp/tmp-img > $gadget/functions/mass_storage.0/lun.0/file
-
 (
 set +x
 while ! [ -f /dev/do-boot ];do
 echo > $gadget/functions/mass_storage.0/lun.0/file
 dmesg > /tmp/tmp-img
+cat /sys/fs/pstore/* >> /tmp/tmp-img
 echo /tmp/tmp-img > $gadget/functions/mass_storage.0/lun.0/file
 sleep 2
 done) &
