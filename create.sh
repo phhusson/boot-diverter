@@ -3,6 +3,8 @@
 rm -Rf rootfs rootfs.img
 
 mkdir -p rootfs/{sbin,bin,config,proc,sys,dev,system/bin,vendor,product,odm,mnt,first_stage_ramdisk,tmp,metadata,bt_firmware,efs,firmware,oem,persist,postinstall,system_ext,sec_storage,dev/pts,dev/socket,sys/fs/selinux,mnt/vendor,mnt/product,debug_ramdisk,system/system_ext/etc/init/config}
+mkdir -p rootfs/target/ rootfs/target_tmp/{dev,proc,sys,mnt,debug_ramdisk,metadata,vendor,odm}
+
 cp files/busybox-armv7l rootfs/bin/busybox
 chmod 0755 rootfs/bin/busybox
 
@@ -26,5 +28,8 @@ cp files/init rootfs/init
 cp files/init rootfs/system/bin/init
 chmod 0755 rootfs/init
 chmod 0755 rootfs/system/bin/init
+
+cp files/diverter_tools rootfs/bin/diverter_tools
+chmod 0755 rootfs/bin/diverter_tools
 
 mkfs.ext4 -d rootfs -b 4096 rootfs.img 64m

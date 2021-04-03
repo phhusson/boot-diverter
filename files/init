@@ -4,6 +4,16 @@ set -x
 
 export PATH=/bin:/sbin
 
+mkdir -p rootfs/target/ rootfs/target_tmp/{dev,proc,sys,mnt,debug_ramdisk,metadata,vendor,odm}
+mount -o move /dev /target_tmp/dev
+mount -o move /proc /target_tmp/proc
+mount -o move /sys /target_tmp/sys
+mount -o move /mnt /target_tmp/mnt
+mount -o move /debug_ramdisk /target_tmp/debug_ramdisk
+mount -o move /metadata /target_tmp/metadata
+mount -o move /vendor /target_tmp/vendor
+mount -o move /odm /target_tmp/odm
+
 #for i in $(cat /proc/mounts |cut -d ' ' -f 2);do
 #umount $i
 #done
@@ -12,12 +22,14 @@ mount -t sysfs none /sys
 mount -t configfs none /config
 mount -t tmpfs none /dev
 mount -t tmpfs none /tmp
-mkdir /ssys/fs/pstore
 mount -t pstore none /sys/fs/pstore
+
+
 
 find /vendor/firmware -name ipa\*
 
 mdev -s
+mdev -d
 
 echo > /config/usb_gadget/g1/UDC
 sleep 2
@@ -40,15 +52,14 @@ dmesg > /tmp/tmp-img
 cat /sys/fs/pstore/* >> /tmp/tmp-img
 echo /tmp/tmp-img > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
 
-#mkdir /config/usb_gadget/g1/functions/gsi.rndis
-
+mkdir /config/usb_gadget/g1/functions/acm.0
 mkdir /config/usb_gadget/g1/functions/ncm.0
-echo usb0 > /config/usb_gadget/g1/functions/ncm.0/ifname
 mkdir /config/usb_gadget/g1/configs/c.1/
 mkdir /config/usb_gadget/g1/configs/c.1/strings/0x409
 echo 'ADB MTP' > /config/usb_gadget/g1/configs/c.1/strings/0x409/configuration
 ln -s /config/usb_gadget/g1/functions/ncm.0 /config/usb_gadget/g1/configs/c.1/f1
 ln -s /config/usb_gadget/g1/functions/mass_storage.0 /config/usb_gadget/g1/configs/c.1/f2
+ln -s /config/usb_gadget/g1/functions/acm.0 /config/usb_gadget/g1/configs/c.1/f3
 #ln -s /config/usb_gadget/g1/functions/gsi.rndis /config/usb_gadget/g1/configs/c.1/f3
 
 echo -n V > /dev/watchdog
@@ -68,7 +79,6 @@ ifconfig -a
 ifconfig lo 127.0.0.1 up
 ifconfig ncm0 192.168.2.3 up
 ifconfig usb0 192.168.2.3 up
-ifconfig rndis0 192.168.3.3 up
 ifconfig $(cat /config/usb_gadget/g1/functions/ncm.0/ifname) 192.168.2.3 up
 
 sleep 5
@@ -78,16 +88,71 @@ cat /sys/fs/pstore/* >> /tmp/tmp-img
 find /dev >> /tmp/tmp-img
 echo /tmp/tmp-img > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
 
-#sleep 5
-#
-#intfs="$(cd /sys/class/net/; echo *)"
-#
-#echo > /config/usb_gadget/g1/UDC
-#sleep 2
-#cat /config/usb_gadget/g1/functions/ncm.0/host_addr > /config/usb_gadget/g1/strings/0x409/serialnumber
-#ls /sys/class/udc |head -n 1  | cat > /config/usb_gadget/g1/UDC
+(
+set +x
+while ! [ -f /dev/do-boot ];do
+echo > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
+dmesg > /tmp/tmp-img
+echo /tmp/tmp-img > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
+sleep 20
+done) &
 
-telnetd -F
+
+mkdir -p /dev/block/mapper
+ln -s /dev/mapper/control /dev/device-mapper
+for i in $(cd /sys/devices/virtual/block/; echo dm-*);do
+    name=$(cat /sys/devices/virtual/block/$i/dm/name)
+    ln -s /dev/$i /dev/block/mapper/$name
+done
+
+PARTNAME=""
+DEVNAME=""
+mkdir -p /dev/block/by-name
+for i in $(cd /sys/dev/block; echo *);do
+    U=/sys/dev/block/$i/uevent
+    PARTNAME=$(sed -nE 's/PARTNAME=//p' $U)
+    DEVNAME=$(sed -nE 's/DEVNAME=//p' $U)
+    if [ -n "$PARTNAME" ] && [ -n "$DEVNAME" ];then
+        ln -s /dev/$DEVNAME /dev/block/by-name/$PARTNAME
+    fi
+    PARTNAME=""
+    DEVNAME=""
+done
+
+if [ -b /dev/block/mapper/system_phh ];then
+    mount -o ro /dev/block/mapper/system_phh /target
+    mount -o move /target_tmp/dev /target/dev
+    mount -o move /target_tmp/proc /target/proc
+    mount -o move /target_tmp/sys /target/sys
+    mount -o move /target_tmp/mnt /target/mnt
+    mount -o move /target_tmp/debug_ramdisk /target/debug_ramdisk
+    mount -o move /target_tmp/metadata /target/metadata
+    mount -o move /target_tmp/vendor /target/vendor
+    mount -o move /target_tmp/odm /target/odm
+fi
+
+(cat /proc/cmdline |tr -d '\n'; echo " " androidboot.selinux=permissive ) > /dev/cmdline
+chmod 0400 /dev/cmdline
+mount -o bind /dev/cmdline /target/proc/cmdline
+
+while ! [ -f /dev/do-boot ];do
+    sh <> /dev/ttyGS0 >&0 2>&1
+    #setsid sh -c 'exec command <> /dev/ttyGS0 >&0 2>&1'
+done
+
+source /dev/do-boot
+
+pkill -f mdev
+
+cat /dev/kmsg > /dev/ttyGS0 &
+
+sleep 5
+
+cd /target
+pivot_root /target debug_ramdisk
+exec /debug_ramdisk/bin/busybox chroot . /system/bin/init selinux_setup
+
+#telnetd -F
 
 sleep 30
 reboot
