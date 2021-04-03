@@ -1,0 +1,93 @@
+#!/bin/sh
+
+set -x
+
+export PATH=/bin:/sbin
+
+#for i in $(cat /proc/mounts |cut -d ' ' -f 2);do
+#umount $i
+#done
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t configfs none /config
+mount -t tmpfs none /dev
+mount -t tmpfs none /tmp
+mkdir /ssys/fs/pstore
+mount -t pstore none /sys/fs/pstore
+
+find /vendor/firmware -name ipa\*
+
+mdev -s
+
+echo > /config/usb_gadget/g1/UDC
+sleep 2
+rm -Rf /config/usb_gadget/g1/configs
+sleep 2
+rm -Rf /config/usb_gadget/g1/configs
+sleep 2
+mkdir /config/usb_gadget/g1
+echo 0x12d1 > /config/usb_gadget/g1/idVendor
+echo 0x103A > /config/usb_gadget/g1/idProduct
+mkdir -p /config/usb_gadget/g1/strings/0x409
+echo phh > /config/usb_gadget/g1/strings/0x409/serialnumber
+echo phh > /config/usb_gadget/g1/strings/0x409/manufacturer
+echo phh > /config/usb_gadget/g1/strings/0x409/product
+
+mkdir /config/usb_gadget/g1/functions/mass_storage.0
+echo 1 > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/removable
+#dd if=/dev/zero of=/tmp/tmp-img bs=1024 count=$((128*1024))
+dmesg > /tmp/tmp-img
+cat /sys/fs/pstore/* >> /tmp/tmp-img
+echo /tmp/tmp-img > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
+
+#mkdir /config/usb_gadget/g1/functions/gsi.rndis
+
+mkdir /config/usb_gadget/g1/functions/ncm.0
+echo usb0 > /config/usb_gadget/g1/functions/ncm.0/ifname
+mkdir /config/usb_gadget/g1/configs/c.1/
+mkdir /config/usb_gadget/g1/configs/c.1/strings/0x409
+echo 'ADB MTP' > /config/usb_gadget/g1/configs/c.1/strings/0x409/configuration
+ln -s /config/usb_gadget/g1/functions/ncm.0 /config/usb_gadget/g1/configs/c.1/f1
+ln -s /config/usb_gadget/g1/functions/mass_storage.0 /config/usb_gadget/g1/configs/c.1/f2
+#ln -s /config/usb_gadget/g1/functions/gsi.rndis /config/usb_gadget/g1/configs/c.1/f3
+
+echo -n V > /dev/watchdog
+echo -n V > /dev/watchdog0
+echo -n V > /dev/watchdog1
+
+sleep 2
+echo > /config/usb_gadget/g1/UDC
+sleep 2
+ls /sys/class/udc |head -n 1  | cat > /config/usb_gadget/g1/UDC
+sleep 2
+echo 2 > /sys/devices/virtual/android_usb/android0/port_mode
+sleep 2
+
+ifconfig -a
+
+ifconfig lo 127.0.0.1 up
+ifconfig ncm0 192.168.2.3 up
+ifconfig usb0 192.168.2.3 up
+ifconfig rndis0 192.168.3.3 up
+ifconfig $(cat /config/usb_gadget/g1/functions/ncm.0/ifname) 192.168.2.3 up
+
+sleep 5
+echo > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
+dmesg > /tmp/tmp-img
+cat /sys/fs/pstore/* >> /tmp/tmp-img
+find /dev >> /tmp/tmp-img
+echo /tmp/tmp-img > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
+
+#sleep 5
+#
+#intfs="$(cd /sys/class/net/; echo *)"
+#
+#echo > /config/usb_gadget/g1/UDC
+#sleep 2
+#cat /config/usb_gadget/g1/functions/ncm.0/host_addr > /config/usb_gadget/g1/strings/0x409/serialnumber
+#ls /sys/class/udc |head -n 1  | cat > /config/usb_gadget/g1/UDC
+
+telnetd -F
+
+sleep 30
+reboot
