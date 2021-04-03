@@ -4,7 +4,7 @@ set -x
 
 export PATH=/bin:/sbin
 
-mkdir -p rootfs/target/ rootfs/target_tmp/{dev,proc,sys,mnt,debug_ramdisk,metadata,vendor,odm}
+
 mount -o move /dev /target_tmp/dev
 mount -o move /proc /target_tmp/proc
 mount -o move /sys /target_tmp/sys
@@ -13,6 +13,7 @@ mount -o move /debug_ramdisk /target_tmp/debug_ramdisk
 mount -o move /metadata /target_tmp/metadata
 mount -o move /vendor /target_tmp/vendor
 mount -o move /odm /target_tmp/odm
+#TODO: Other mount points for non-GSI (system_ext? product?)
 
 #for i in $(cat /proc/mounts |cut -d ' ' -f 2);do
 #umount $i
@@ -31,70 +32,62 @@ find /vendor/firmware -name ipa\*
 mdev -s
 mdev -d
 
-echo > /config/usb_gadget/g1/UDC
-sleep 2
-rm -Rf /config/usb_gadget/g1/configs
-sleep 2
-rm -Rf /config/usb_gadget/g1/configs
-sleep 2
-mkdir /config/usb_gadget/g1
-echo 0x12d1 > /config/usb_gadget/g1/idVendor
-echo 0x103A > /config/usb_gadget/g1/idProduct
-mkdir -p /config/usb_gadget/g1/strings/0x409
-echo phh > /config/usb_gadget/g1/strings/0x409/serialnumber
-echo phh > /config/usb_gadget/g1/strings/0x409/manufacturer
-echo phh > /config/usb_gadget/g1/strings/0x409/product
+gadget=/config/usb_gadget/g1
+echo > $gadget/UDC
+rm -Rf $gadget/configs
+rm -Rf $gadget/configs
+mkdir $gadget
+echo 0x12d1 > $gadget/idVendor
+echo 0x103A > $gadget/idProduct
+mkdir -p $gadget/strings/0x409
+echo phh > $gadget/strings/0x409/serialnumber
+echo phh > $gadget/strings/0x409/manufacturer
+echo phh > $gadget/strings/0x409/product
 
-mkdir /config/usb_gadget/g1/functions/mass_storage.0
-echo 1 > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/removable
+mkdir $gadget/functions/mass_storage.0
+echo 1 > $gadget/functions/mass_storage.0/lun.0/removable
 #dd if=/dev/zero of=/tmp/tmp-img bs=1024 count=$((128*1024))
 dmesg > /tmp/tmp-img
 cat /sys/fs/pstore/* >> /tmp/tmp-img
-echo /tmp/tmp-img > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
+echo /tmp/tmp-img > $gadget/functions/mass_storage.0/lun.0/file
 
-mkdir /config/usb_gadget/g1/functions/acm.0
-mkdir /config/usb_gadget/g1/functions/ncm.0
-mkdir /config/usb_gadget/g1/configs/c.1/
-mkdir /config/usb_gadget/g1/configs/c.1/strings/0x409
-echo 'ADB MTP' > /config/usb_gadget/g1/configs/c.1/strings/0x409/configuration
-ln -s /config/usb_gadget/g1/functions/ncm.0 /config/usb_gadget/g1/configs/c.1/f1
-ln -s /config/usb_gadget/g1/functions/mass_storage.0 /config/usb_gadget/g1/configs/c.1/f2
-ln -s /config/usb_gadget/g1/functions/acm.0 /config/usb_gadget/g1/configs/c.1/f3
-#ln -s /config/usb_gadget/g1/functions/gsi.rndis /config/usb_gadget/g1/configs/c.1/f3
+mkdir $gadget/functions/acm.0
+mkdir $gadget/functions/ncm.0
+mkdir $gadget/configs/c.1/
+mkdir $gadget/configs/c.1/strings/0x409
+echo 'ADB MTP' > $gadget/configs/c.1/strings/0x409/configuration
+ln -s $gadget/functions/ncm.0 $gadget/configs/c.1/f1
+ln -s $gadget/functions/mass_storage.0 $gadget/configs/c.1/f2
+ln -s $gadget/functions/acm.0 $gadget/configs/c.1/f3
 
 echo -n V > /dev/watchdog
 echo -n V > /dev/watchdog0
 echo -n V > /dev/watchdog1
 
-sleep 2
-echo > /config/usb_gadget/g1/UDC
-sleep 2
-ls /sys/class/udc |head -n 1  | cat > /config/usb_gadget/g1/UDC
-sleep 2
+echo > $gadget/UDC
+ls /sys/class/udc |head -n 1  | cat > $gadget/UDC
 echo 2 > /sys/devices/virtual/android_usb/android0/port_mode
-sleep 2
 
 ifconfig -a
 
 ifconfig lo 127.0.0.1 up
 ifconfig ncm0 192.168.2.3 up
 ifconfig usb0 192.168.2.3 up
-ifconfig $(cat /config/usb_gadget/g1/functions/ncm.0/ifname) 192.168.2.3 up
+ifconfig $(cat $gadget/functions/ncm.0/ifname) 192.168.2.3 up
 
-sleep 5
-echo > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
+echo > $gadget/functions/mass_storage.0/lun.0/file
 dmesg > /tmp/tmp-img
 cat /sys/fs/pstore/* >> /tmp/tmp-img
 find /dev >> /tmp/tmp-img
-echo /tmp/tmp-img > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
+echo /tmp/tmp-img > $gadget/functions/mass_storage.0/lun.0/file
 
 (
 set +x
 while ! [ -f /dev/do-boot ];do
-echo > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
+echo > $gadget/functions/mass_storage.0/lun.0/file
 dmesg > /tmp/tmp-img
-echo /tmp/tmp-img > /config/usb_gadget/g1/functions/mass_storage.0/lun.0/file
-sleep 20
+echo /tmp/tmp-img > $gadget/functions/mass_storage.0/lun.0/file
+sleep 2
 done) &
 
 
@@ -129,24 +122,53 @@ if [ -b /dev/block/mapper/system_phh ];then
     mount -o move /target_tmp/metadata /target/metadata
     mount -o move /target_tmp/vendor /target/vendor
     mount -o move /target_tmp/odm /target/odm
+    #TODO: Other mount points for non-GSI (system_ext? product?)
 fi
 
-(cat /proc/cmdline |tr -d '\n'; echo " " androidboot.selinux=permissive ) > /dev/cmdline
-chmod 0400 /dev/cmdline
-mount -o bind /dev/cmdline /target/proc/cmdline
+# UNCOMMENTME: To grab kernel logs to ttyGS0 you'll need SELinux permissive
+#(cat /proc/cmdline |tr -d '\n'; echo " " androidboot.selinux=permissive ) > /dev/cmdline
+#chmod 0400 /dev/cmdline
+#mount -o bind /dev/cmdline /target/proc/cmdline
 
-while ! [ -f /dev/do-boot ];do
+
+# UNCOMMENTME: To have unauthenticated adb
+# cp /target/vendor/default.prop /dev/vendor_default.prop
+# sed -i -e '/adb.secure/d' /dev/vendor_default.prop
+# chmod 0400 /dev/vendor_default.prop
+# mount -o bind /dev/vendor_default.prop /target/vendor/default.prop
+
+pause=false
+for i in $(seq 1 10);do
+    echo "Hello world, press enter to pause" > /dev/ttyGS0
+    if timeout 2 sh -c 'read i < /dev/ttyGS0';then
+        pause=true
+        break
+    fi
+done
+
+while $pause && ! [ -f /dev/do-boot ];do
     sh <> /dev/ttyGS0 >&0 2>&1
     #setsid sh -c 'exec command <> /dev/ttyGS0 >&0 2>&1'
 done
 
-source /dev/do-boot
+[ -f /dev/do-boot ] && source /dev/do-boot
 
 pkill -f mdev
 
 cat /dev/kmsg > /dev/ttyGS0 &
 
 sleep 5
+
+# COMMENTME: To grab kernel logs to ttyGS0 you need to keep usb gadget open
+echo > $gadget/UDC
+rm $gadget/configs/c.1/f3
+rm $gadget/configs/c.1/f2
+rm $gadget/configs/c.1/f1
+rmdir $gadget/configs/c.1/strings/0x409/
+rmdir $gadget/configs/c.1/strings/0x409
+rmdir $gadget/configs/c.1
+rmdir $gadget/configs/c.1/
+# END OF COMMENTME
 
 cd /target
 pivot_root /target debug_ramdisk
