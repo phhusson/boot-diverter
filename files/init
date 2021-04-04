@@ -49,6 +49,9 @@ mkdir $gadget/functions/acm.0
 # Setup NCM (acts as a network interface. Nothing to setup)
 mkdir $gadget/functions/ncm.0
 
+# Setup NCM (acts as a network interface. Nothing to setup)
+mkdir $gadget/functions/rndis.0
+
 # Configure the gadget with all the functions
 mkdir $gadget/configs/c.1/
 mkdir $gadget/configs/c.1/strings/0x409
@@ -58,6 +61,7 @@ echo 'ADB MTP' > $gadget/configs/c.1/strings/0x409/configuration
 ln -s $gadget/functions/ncm.0 $gadget/configs/c.1/f1
 ln -s $gadget/functions/mass_storage.0 $gadget/configs/c.1/f2
 ln -s $gadget/functions/acm.0 $gadget/configs/c.1/f3
+ln -s $gadget/functions/rndis.0 $gadget/configs/c.1/f4
 
 # Disable watchdogs
 echo -n V > /dev/watchdog
@@ -73,6 +77,7 @@ ifconfig -a
 ifconfig lo 127.0.0.1 up
 ifconfig ncm0 192.168.2.3 up
 ifconfig usb0 192.168.2.3 up
+ifconfig rndis0 192.168.2.3 up
 ifconfig $(cat $gadget/functions/ncm.0/ifname) 192.168.2.3 up
 
 (
@@ -156,6 +161,7 @@ sleep 5
 
 # COMMENTME: To grab kernel logs to ttyGS0 you need to keep usb gadget open
 echo > $gadget/UDC
+rm $gadget/configs/c.1/f4
 rm $gadget/configs/c.1/f3
 rm $gadget/configs/c.1/f2
 rm $gadget/configs/c.1/f1
