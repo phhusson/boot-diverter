@@ -2,7 +2,7 @@
 
 rm -Rf rootfs rootfs.img
 
-mkdir -p rootfs/{sbin,bin,config,proc,sys,dev,system/bin,vendor,product,odm,mnt,first_stage_ramdisk,tmp,metadata,bt_firmware,efs,firmware,oem,persist,postinstall,system_ext,sec_storage,dev/pts,dev/socket,sys/fs/selinux,mnt/vendor,mnt/product,debug_ramdisk,system/system_ext/etc/init/config}
+mkdir -p rootfs/{apex,sbin,bin,config,proc,sys,dev,system/bin,vendor,product,odm,mnt,first_stage_ramdisk,tmp,metadata,bt_firmware,efs,firmware,oem,persist,postinstall,system_ext,sec_storage,dev/pts,dev/socket,sys/fs/selinux,mnt/vendor,mnt/product,debug_ramdisk,system/system_ext/etc/init/config}
 mkdir -p rootfs/target/ rootfs/target_tmp/{dev,proc,sys,mnt,debug_ramdisk,metadata,vendor,odm}
 
 cp files/busybox-armv7l rootfs/bin/busybox
