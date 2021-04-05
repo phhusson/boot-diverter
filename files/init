@@ -12,7 +12,7 @@ mount -o move /debug_ramdisk /target_tmp/debug_ramdisk
 mount -o move /metadata /target_tmp/metadata
 mount -o move /vendor /target_tmp/vendor
 mount -o move /odm /target_tmp/odm
-#TODO: Other mount points for non-GSI (system_ext? product?)
+#TODO: Other mount points for non-GSI (system_ext? product?) + Device-specific (prism,optics)
 
 mount -t proc none /proc
 mount -t sysfs none /sys
@@ -31,45 +31,68 @@ rm -Rf $gadget/configs
 mkdir $gadget
 echo 0x12d1 > $gadget/idVendor
 echo 0x103A > $gadget/idProduct
+echo 12D1 > /sys/class/android_usb/android0/idVendor
+echo 103A > /sys/class/android_usb/android0/idProduct
+echo phh > /sys/class/android_usb/android0/iManufacturer
+echo phh > /sys/class/android_usb/android0/iProduct
+echo phh > /sys/class/android_usb/android0/iSerial
 mkdir -p $gadget/strings/0x409
 echo phh > $gadget/strings/0x409/serialnumber
 echo phh > $gadget/strings/0x409/manufacturer
 echo phh > $gadget/strings/0x409/product
-
-# Setup mass_storage with current dmesg + pstore
-mkdir $gadget/functions/mass_storage.0
-echo 1 > $gadget/functions/mass_storage.0/lun.0/removable
-dmesg > /tmp/tmp-img
-cat /sys/fs/pstore/* >> /tmp/tmp-img
-echo /tmp/tmp-img > $gadget/functions/mass_storage.0/lun.0/file
-
-# Setup ACM (acts as a serial port. Nothing to setup)
-mkdir $gadget/functions/acm.0
-
-# Setup NCM (acts as a network interface. Nothing to setup)
-mkdir $gadget/functions/ncm.0
-
-# Setup NCM (acts as a network interface. Nothing to setup)
-mkdir $gadget/functions/rndis.0
 
 # Configure the gadget with all the functions
 mkdir $gadget/configs/c.1/
 mkdir $gadget/configs/c.1/strings/0x409
 echo 'ADB MTP' > $gadget/configs/c.1/strings/0x409/configuration
 
-#TODO: Error handling? what happens if one of the functions failed? We should be graceful
-ln -s $gadget/functions/ncm.0 $gadget/configs/c.1/f1
-ln -s $gadget/functions/mass_storage.0 $gadget/configs/c.1/f2
-ln -s $gadget/functions/acm.0 $gadget/configs/c.1/f3
-ln -s $gadget/functions/rndis.0 $gadget/configs/c.1/f4
+gadgetNr=1
+addGadget() {
+    d=$gadget/functions/${1}.0
+    mkdir $d
+    if [ -d $d ];then
+        echo "Adding $d to $gadget/configs/c.1/f$gadgetNr" > /dev/kmsg
+        if ln -s $d $gadget/configs/c.1/f$gadgetNr;then
+            echo ...Succeeded > /dev/kmsg
+        else
+            sh -c "ln -s $d $gadget/configs/c.1/f$gadgetNr" > /dev/kmsg 2>&1
+            echo ...Failed > /dev/kmsg
+        fi
+        gadgetNr=$((gadgetNr+1))
+    else
+        echo "Failed adding $d" > /dev/kmsg
+    fi
+}
+
+addGadget acm
+addGadget rndis
+
+# Setup mass_storage with current dmesg + pstore
+addGadget mass_storage
+echo 1 > $gadget/functions/mass_storage.0/lun.0/removable
+dmesg > /tmp/tmp-img
+cat /sys/fs/pstore/* >> /tmp/tmp-img
+echo /tmp/tmp-img > $gadget/functions/mass_storage.0/lun.0/file
+
+echo Functions > /dev/kmsg
+ls -l $gadget/functions/c.1 > /dev/kmsg
+echo Configs > /dev/kmsg
+ls -l $gadget/configs/c.1 > /dev/kmsg
 
 # Disable watchdogs
 echo -n V > /dev/watchdog
 echo -n V > /dev/watchdog0
 echo -n V > /dev/watchdog1
 
-echo > $gadget/UDC
+echo Functions > /dev/kmsg
+ls -l $gadget/functions/c.1 > /dev/kmsg
+echo Configs > /dev/kmsg
+ls -l $gadget/configs/c.1 > /dev/kmsg
+
+#echo > $gadget/UDC
+#echo acm > /sys/class/android_usb/android0/functions
 ls /sys/class/udc |head -n 1  | cat > $gadget/UDC
+echo 1 > /sys/devices/virtual/android_usb/android0/enable
 echo 2 > /sys/devices/virtual/android_usb/android0/port_mode
 
 ifconfig -a
