@@ -85,6 +85,7 @@ ls -l $gadget/configs/c.1 > /dev/kmsg
 echo -n V > /dev/watchdog
 echo -n V > /dev/watchdog0
 echo -n V > /dev/watchdog1
+echo 0 > /proc/sys/kernel/hung_task_timeout_secs
 
 echo Functions > /dev/kmsg
 ls -l $gadget/functions/c.1 > /dev/kmsg
