@@ -44,18 +44,20 @@ echo phh > $gadget/strings/0x409/product
 # Configure the gadget with all the functions
 mkdir $gadget/configs/c.1/
 mkdir $gadget/configs/c.1/strings/0x409
-echo 'ADB MTP' > $gadget/configs/c.1/strings/0x409/configuration
+# This name is important, see SM-A515F's kernel source, drivers/usb/gadget/configfs.c @check_symboliclink_change_mode
+echo 'Conf 1' > $gadget/configs/c.1/strings/0x409/configuration
 
 gadgetNr=1
 addGadget() {
     d=$gadget/functions/${1}.0
+    t=$gadget/configs/c.1/f$gadgetNr
     mkdir $d
     if [ -d $d ];then
-        echo "Adding $d to $gadget/configs/c.1/f$gadgetNr" > /dev/kmsg
-        if ln -s $d $gadget/configs/c.1/f$gadgetNr;then
+        echo "Adding $d to $t" > /dev/kmsg
+        if ln -s $d $t;then
             echo ...Succeeded > /dev/kmsg
         else
-            sh -c "ln -s $d $gadget/configs/c.1/f$gadgetNr" > /dev/kmsg 2>&1
+            sh -c "mkdir $d; mkdir $gadget/configs/c.1; ln -s $d $t" > /dev/kmsg 2>&1
             echo ...Failed > /dev/kmsg
         fi
         gadgetNr=$((gadgetNr+1))
@@ -90,7 +92,7 @@ echo Configs > /dev/kmsg
 ls -l $gadget/configs/c.1 > /dev/kmsg
 
 #echo > $gadget/UDC
-#echo acm > /sys/class/android_usb/android0/functions
+echo acm,rndis > /sys/class/android_usb/android0/functions
 ls /sys/class/udc |head -n 1  | cat > $gadget/UDC
 echo 1 > /sys/devices/virtual/android_usb/android0/enable
 echo 2 > /sys/devices/virtual/android_usb/android0/port_mode
