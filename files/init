@@ -179,6 +179,13 @@ fi
 # chmod 0400 /dev/vendor_default.prop
 # mount -o bind /dev/vendor_default.prop /target/vendor/default.prop
 
+mkdir -p /dev/fstabs
+for fstab in $(cd /target/vendor/etc/; echo fstab*);do
+    cp /target/vendor/etc/$fstab /dev/fstabs/$fstab
+    sed -i /sdcard/d /dev/fstabs/$fstab
+    mount -o bind /dev/fstabs/$fstab /target/vendor/etc/$fstab
+done
+
 pause=false
 for i in $(seq 1 10);do
     echo "Hello world, press enter to pause" > /dev/ttyGS0
