@@ -138,8 +138,24 @@ for i in $(cd /sys/dev/block; echo *);do
     DEVNAME=""
 done
 
-if [ -b /dev/block/mapper/system_phh ];then
+
+foundTarget=false
+if ! $foundTarget && [ -b /dev/mmcblk0p1 ];then
+    mkdir /dev/mntSD
+    mount -o ro /dev/mmcblk0p1 /dev/mntSD
+    if [ -f /dev/mntSD/Diverter/system.img ];then
+        losetup /dev/loop15 /dev/mntSD/Diverter/system.img
+        if mount -o ro /dev/loop15 /target;then
+            foundTarget=true
+        fi
+    fi
+fi
+
+if ! $foundTarget && [ -b /dev/block/mapper/system_phh ];then
     mount -o ro /dev/block/mapper/system_phh /target
+fi
+
+if $foundTarget;then
     mount -o move /target_tmp/dev /target/dev
     mount -o move /target_tmp/proc /target/proc
     mount -o move /target_tmp/sys /target/sys
