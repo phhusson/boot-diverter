@@ -33,5 +33,7 @@ cp files/diverter_tools rootfs/bin/diverter_tools
 chmod 0755 rootfs/bin/diverter_tools
 cp files/linear-map rootfs/bin/linear-map
 chmod 0755 rootfs/bin/linear-map
+cp files/dmctl rootfs/bin/dmctl
+chmod 0755 rootfs/bin/dmctl
 
 mkfs.ext4 -d rootfs -b 4096 rootfs.img 64m
