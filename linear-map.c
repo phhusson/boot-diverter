@@ -49,12 +49,7 @@ int main(int argc, char **argv) {
                 write(fd, zero, 512);
             }
             gotZero = 1;
-            //fprintf(stderr, "zero from %08llx to %08llx\n", last_logical, map->fm_extents[i].fe_logical);
         }
-        #if 0
-        fprintf(stderr, "file from %08llx to %08llx\n", map->fm_extents[i].fe_logical, (map->fm_extents[i].fe_logical + map->fm_extents[i].fe_length));
-        fprintf(stderr, "\t@%08llx\n", map->fm_extents[i].fe_physical);
-        #endif
         printf("linear %lld %lld /dev/mmcblk0p1 %lld\n", last_logical/512, map->fm_extents[i].fe_length/512, map->fm_extents[i].fe_physical/512);
         last_logical = map->fm_extents[i].fe_logical + map->fm_extents[i].fe_length;
     }

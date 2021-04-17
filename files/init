@@ -116,6 +116,12 @@ echo /tmp/tmp-img > $gadget/functions/mass_storage.0/lun.0/file
 sleep 2
 done) &
 
+(
+while ! [ -f /dev/booting ];do
+    sh <> /dev/ttyGS0 >&0 2>&1
+done
+) &
+
 refreshMapper() {
     mkdir -p /dev/block/mapper
     ln -s /dev/mapper/control /dev/device-mapper
@@ -150,29 +156,67 @@ if [ -b /dev/block/mapper/system_phh ];then
 fi
 
 mkdir /dev/targetSD
-if ! $foundTarget && [ -b /dev/mmcblk0p1 ];then
+hostController="$(readlink /dev/block/by-name/super |sed -E 's;/dev/(.*)p[0-9]*;\1;g')"
+sdcard=""
+for k in $(seq 1 15);do
+    for i in /dev/mmcblk*p1;do
+        if echo "$i" |grep -v -q "$hostController";then
+            sdcard="$i"
+        fi
+    done
+    [ -n "$sdcard" ] && break
+    sleep 1
+done
+if ! $foundTarget && [ -n "$sdcard" ] && [ -b "$sdcard" ];then
     mkdir /dev/mntSD
-    mount -o rw /dev/mmcblk0p1 /dev/mntSD
+    mount -o rw "$sdcard" /dev/mntSD
     if [ -f /dev/mntSD/Diverter/system.img ];then
         # run twice to de-hole/de-sparse
         linear-map /dev/mntSD/Diverter/system.img > /dev/system-map
         linear-map /dev/mntSD/Diverter/system.img > /dev/system-map
+        if [ ! -f /dev/mntSD/Diverter/userdata.img ];then
+            dd if=/dev/zero of=/dev/mntSD/Diverter/userdata.img bs=$((1024*1024)) count=8k
+            mke2fs -t ext4 -b 4096 -O uninit_bg /dev/mntSD/Diverter/userdata.img
+        fi
         linear-map /dev/mntSD/Diverter/userdata.img > /dev/userdata-map
         linear-map /dev/mntSD/Diverter/userdata.img > /dev/userdata-map
+
+        if [ -f /dev/mntSD/Diverter/product.img ];then
+            linear-map /dev/mntSD/Diverter/product.img > /dev/product-map
+            linear-map /dev/mntSD/Diverter/product.img > /dev/product-map
+        fi
+
         umount /dev/mntSD
-        dmctl create sd_system $(cat /dev/system-map)
-        dmctl create sd_userdata $(cat /dev/userdata-map)
+
+        for f in system userdata product;do
+            g=/dev/${f}-map
+            if [ -f "$g" ];then
+                sed -i "s;/dev/mmcblk0p1;$sdcard;g" "$g"
+                dmctl create sd_$f $(cat "$g")
+            fi
+        done
+
         refreshMapper
         mount -o ro /dev/block/mapper/sd_system /dev/targetSD
     fi
 fi
 
+vibrate() {
+    duration="$1"
+    if [ -f /sys/devices/virtual/timed_output/vibrator/enable ];then
+        echo -n $1 > /sys/devices/virtual/timed_output/vibrator/enable
+    elif [ -f /sys/class/leds/vibrator/duration ];then
+        echo $1 > /sys/class/leds/vibrator/duration
+        echo 1 > /sys/class/leds/vibrator/activate
+    fi
+}
+
 # Say hello to the user
-echo -n 100 > /sys/devices/virtual/timed_output/vibrator/enable
+vibrate 100
 sleep .2
-echo -n 100 > /sys/devices/virtual/timed_output/vibrator/enable
+vibrate 100
 sleep .2
-echo -n 100 > /sys/devices/virtual/timed_output/vibrator/enable
+vibrate 100
 
 timeout 10 input-waiter > /dev/choice
 
@@ -183,6 +227,7 @@ fi
 if grep DOWN /dev/choice;then
     mount -o move /dev/targetSD /target
     foundTarget=true
+    target=sdcard
 fi
 
 if $foundTarget;then
@@ -196,20 +241,22 @@ if $foundTarget;then
     mount -o move /target_tmp/vendor /target/vendor
     mount -o move /target_tmp/odm /target/odm
     #TODO: Other mount points for non-GSI (system_ext? product?)
+    if [ "$target" = "sdcard" ] && [ -f /dev/product-map ];then
+        umount /target/product
+        mount -o ro /dev/block/mapper/sd_product /target/product
+    fi
 fi
 
 # UNCOMMENTME: To grab kernel logs to ttyGS0 you'll need SELinux permissive
-#(cat /proc/cmdline |sed -E 's/androidboot.selinux=[^ ]*//g' |tr -d '\n'; echo " " androidboot.selinux=permissive ) > /dev/cmdline
-#chmod 0400 /dev/cmdline
-#mount -o bind /dev/cmdline /target/proc/cmdline
+(cat /proc/cmdline |sed -E 's/androidboot.selinux=[^ ]*//g' |tr -d '\n'; echo " " androidboot.selinux=permissive ) > /dev/cmdline
+chmod 0400 /dev/cmdline
+mount -o bind /dev/cmdline /target/proc/cmdline
 
 # UNCOMMENTME: To have unauthenticated adb
 # cp /target/vendor/default.prop /dev/vendor_default.prop
 # sed -i -e '/adb.secure/d' /dev/vendor_default.prop
 # chmod 0400 /dev/vendor_default.prop
 # mount -o bind /dev/vendor_default.prop /target/vendor/default.prop
-
-# /dev/block/platform/13520000.ufs/by-name/userdata       /data   f2fs    noatime,nosuid,nodev,discard,usrquota,grpquota,fsync_mode=nobarrier,reserve_root=32768,resgid=5678 latemount,wait,check,fileencryption=ice0
 
 if grep DOWN /dev/choice;then
     mkdir -p /dev/fstabs
@@ -232,14 +279,10 @@ if grep DOWN /dev/choice;then
     done
 fi
 
-pause=false
-if ! grep -q -e UP -e DOWN /dev/choice;then
-    pause=true
-fi
-
-while $pause && ! [ -f /dev/do-boot ];do
-    sh <> /dev/ttyGS0 >&0 2>&1
+while [ -f /dev/wait-boot ];do
+    sleep 1
 done
+touch /dev/booting
 
 [ -f /dev/do-boot ] && source /dev/do-boot
 
@@ -250,20 +293,23 @@ cat /dev/kmsg > /dev/ttyGS0 &
 sleep 5
 
 # COMMENTME: To grab kernel logs to ttyGS0 you need to keep usb gadget open
-echo > $gadget/UDC
-rm $gadget/configs/c.1/f4
-rm $gadget/configs/c.1/f3
-rm $gadget/configs/c.1/f2
-rm $gadget/configs/c.1/f1
-rmdir $gadget/configs/c.1/strings/0x409/
-rmdir $gadget/configs/c.1/strings/0x409
-rmdir $gadget/configs/c.1
-rmdir $gadget/configs/c.1/
+#echo > $gadget/UDC
+#rm $gadget/configs/c.1/f4
+#rm $gadget/configs/c.1/f3
+#rm $gadget/configs/c.1/f2
+#rm $gadget/configs/c.1/f1
+#rmdir $gadget/configs/c.1/strings/0x409/
+#rmdir $gadget/configs/c.1/strings/0x409
+#rmdir $gadget/configs/c.1
+#rmdir $gadget/configs/c.1/
 # END OF COMMENTME
 
+echo HAHA > /dev/kmsg
 cd /target
+echo HIHI > /dev/kmsg
 pivot_root /target debug_ramdisk
-exec /debug_ramdisk/bin/busybox chroot . /system/bin/init selinux_setup
+echo HEHE > /dev/kmsg
+exec /debug_ramdisk/bin/busybox chroot . /system/bin/init selinux_setup > /dev/kmsg
 
 #telnetd -F
 
