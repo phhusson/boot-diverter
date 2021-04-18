@@ -12,6 +12,9 @@ mount -o move /debug_ramdisk /target_tmp/debug_ramdisk
 mount -o move /metadata /target_tmp/metadata
 mount -o move /vendor /target_tmp/vendor
 mount -o move /odm /target_tmp/odm
+mount -o move /apex /target_tmp/apex
+mount -o move /prism /target_tmp/prism
+mount -o move /optics /target_tmp/optics
 #TODO: Other mount points for non-GSI (system_ext? product?) + Device-specific (prism,optics)
 
 mount -t proc none /proc
@@ -108,7 +111,7 @@ ifconfig $(cat $gadget/functions/ncm.0/ifname) 192.168.2.3 up
 
 (
 set +x
-while ! [ -f /dev/do-boot ];do
+while ! [ -f /dev/booting ];do
 echo > $gadget/functions/mass_storage.0/lun.0/file
 dmesg > /tmp/tmp-img
 cat /sys/fs/pstore/* >> /tmp/tmp-img
@@ -240,7 +243,11 @@ if $foundTarget;then
     mount -o move /target_tmp/metadata /target/metadata
     mount -o move /target_tmp/vendor /target/vendor
     mount -o move /target_tmp/odm /target/odm
+    mount -o move /target_tmp/apex /target/apex
+    mount -o move /target_tmp/prism /target/prism
+    mount -o move /target_tmp/optics /target/optics
     #TODO: Other mount points for non-GSI (system_ext? product?)
+
     if [ "$target" = "sdcard" ] && [ -f /dev/product-map ];then
         umount /target/product
         mount -o ro /dev/block/mapper/sd_product /target/product
@@ -248,9 +255,9 @@ if $foundTarget;then
 fi
 
 # UNCOMMENTME: To grab kernel logs to ttyGS0 you'll need SELinux permissive
-(cat /proc/cmdline |sed -E 's/androidboot.selinux=[^ ]*//g' |tr -d '\n'; echo " " androidboot.selinux=permissive ) > /dev/cmdline
-chmod 0400 /dev/cmdline
-mount -o bind /dev/cmdline /target/proc/cmdline
+#(cat /proc/cmdline |sed -E 's/androidboot.selinux=[^ ]*//g' |tr -d '\n'; echo " " androidboot.selinux=permissive ) > /dev/cmdline
+#chmod 0400 /dev/cmdline
+#mount -o bind /dev/cmdline /target/proc/cmdline
 
 # UNCOMMENTME: To have unauthenticated adb
 # cp /target/vendor/default.prop /dev/vendor_default.prop
@@ -266,6 +273,7 @@ if grep DOWN /dev/choice;then
         sed -i -E -e 's;([^ ]*)(.*/data\b.*);/dev/block/mapper/sd_userdata \2;g' /dev/fstabs/$fstab
         sed -i -E -e '/sd_userdata/s;f2fs;ext4;g' /dev/fstabs/$fstab
         sed -i -E -e '/sd_userdata/s;fsync_mode=nobarrier,reserve_root=32768,;;g' /dev/fstabs/$fstab
+        sed -i '/product/d' /dev/fstabs/$fstab
     done
 
     mke2fs /dev/ram0
@@ -278,6 +286,9 @@ if grep DOWN /dev/choice;then
         mount -o bind /dev/mntRAM/$fstab /target/vendor/etc/$fstab
     done
 fi
+
+# Disable /dev/kmsg rate limiting
+echo on > /proc/sys/kernel/printk_devkmsg
 
 while [ -f /dev/wait-boot ];do
     sleep 1
@@ -293,15 +304,15 @@ cat /dev/kmsg > /dev/ttyGS0 &
 sleep 5
 
 # COMMENTME: To grab kernel logs to ttyGS0 you need to keep usb gadget open
-#echo > $gadget/UDC
-#rm $gadget/configs/c.1/f4
-#rm $gadget/configs/c.1/f3
-#rm $gadget/configs/c.1/f2
-#rm $gadget/configs/c.1/f1
-#rmdir $gadget/configs/c.1/strings/0x409/
-#rmdir $gadget/configs/c.1/strings/0x409
-#rmdir $gadget/configs/c.1
-#rmdir $gadget/configs/c.1/
+echo > $gadget/UDC
+rm $gadget/configs/c.1/f4
+rm $gadget/configs/c.1/f3
+rm $gadget/configs/c.1/f2
+rm $gadget/configs/c.1/f1
+rmdir $gadget/configs/c.1/strings/0x409/
+rmdir $gadget/configs/c.1/strings/0x409
+rmdir $gadget/configs/c.1
+rmdir $gadget/configs/c.1/
 # END OF COMMENTME
 
 echo HAHA > /dev/kmsg
