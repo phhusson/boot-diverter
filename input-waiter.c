@@ -41,20 +41,12 @@ int main() {
             goto next;
         }
 
-        if(!HasSpecificKey(fd, KEY_VOLUMEDOWN)) {
-            fprintf(stderr, "event%d doesnt have volume down key\n", i);
-            goto next;
+        if(HasSpecificKey(fd, KEY_VOLUMEDOWN) || HasSpecificKey(fd, KEY_VOLUMEUP)) {
+            fprintf(stderr, "We have a winner with event%d!\n", i);
+            fds[nFds++] = fd;
+            free(path);
+            continue;
         }
-
-        if(!HasSpecificKey(fd, KEY_VOLUMEUP)) {
-            fprintf(stderr, "event%d doesnt have volume up key\n", i);
-            goto next;
-        }
-
-        fprintf(stderr, "We have a winner with event%d!\n", i);
-        fds[nFds++] = fd;
-        free(path);
-        continue;
 
 next:
         close(fd);
