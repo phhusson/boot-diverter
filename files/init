@@ -290,6 +290,9 @@ fi
 # Disable /dev/kmsg rate limiting
 echo on > /proc/sys/kernel/printk_devkmsg
 
+if ! grep -q -e DOWN -e UP /dev/choice;then
+    touch /dev/wait-boot
+fi
 while [ -f /dev/wait-boot ];do
     sleep 1
 done

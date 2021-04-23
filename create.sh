@@ -28,6 +28,9 @@ ln -s /bin/busybox rootfs/sbin/route
 ln -s /bin/busybox rootfs/sbin/mdev
 ln -s /bin/busybox rootfs/sbin/telnetd
 
+cp files/adb_debug.prop rootfs/adb_debug.prop
+chmod 0644 rootfs/adb_debug.prop
+
 cp files/init rootfs/init
 cp files/init rootfs/system/bin/init
 chmod 0755 rootfs/init
