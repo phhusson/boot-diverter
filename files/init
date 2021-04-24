@@ -247,7 +247,7 @@ if grep DOWN /dev/choice;then
     # Patch sepolicy
     mkdir -p /dev/selinux
     cp /target/system/etc/selinux/plat_sepolicy.cil /dev/selinux/
-    # Allow kernel to read / write unlabeled files for our bind mount to work
+    # Allow kernel to read / write unlabeled files for our loop mount to work
     echo "(allow kernel unlabeled (file (read write create)))" >> /dev/selinux/plat_sepolicy.cil
     mount -o bind /dev/selinux/plat_sepolicy.cil /target/system/etc/selinux/plat_sepolicy.cil
 
