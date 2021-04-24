@@ -162,7 +162,7 @@ mkdir /dev/targetSD
 hostController="$(readlink /dev/block/by-name/super |sed -E 's;/dev/(.*)p[0-9]*;\1;g')"
 sdcard=""
 for k in $(seq 1 15);do
-    for i in /dev/mmcblk*p1;do
+    for i in $(find /dev -name 'mmcblk*p1');do
         if echo "$i" |grep -v -q "$hostController";then
             sdcard="$i"
         fi
