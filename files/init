@@ -315,6 +315,8 @@ cd /target
 echo HIHI > /dev/kmsg
 pivot_root /target debug_ramdisk
 echo HEHE > /dev/kmsg
+
+unset PATH
 exec /debug_ramdisk/bin/busybox chroot . /system/bin/init selinux_setup > /dev/kmsg
 
 #telnetd -F
