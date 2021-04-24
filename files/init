@@ -174,33 +174,11 @@ if ! $foundTarget && [ -n "$sdcard" ] && [ -b "$sdcard" ];then
     mkdir /dev/mntSD
     mount -o rw "$sdcard" /dev/mntSD
     if [ -f /dev/mntSD/Diverter/system.img ];then
-        # run twice to de-hole/de-sparse
-        linear-map /dev/mntSD/Diverter/system.img > /dev/system-map
-        linear-map /dev/mntSD/Diverter/system.img > /dev/system-map
         if [ ! -f /dev/mntSD/Diverter/userdata.img ];then
             dd if=/dev/zero of=/dev/mntSD/Diverter/userdata.img bs=$((1024*1024)) count=8k
             mke2fs -t ext4 -b 4096 -O uninit_bg /dev/mntSD/Diverter/userdata.img
         fi
-        linear-map /dev/mntSD/Diverter/userdata.img > /dev/userdata-map
-        linear-map /dev/mntSD/Diverter/userdata.img > /dev/userdata-map
-
-        if [ -f /dev/mntSD/Diverter/product.img ];then
-            linear-map /dev/mntSD/Diverter/product.img > /dev/product-map
-            linear-map /dev/mntSD/Diverter/product.img > /dev/product-map
-        fi
-
-        umount /dev/mntSD
-
-        for f in system userdata product;do
-            g=/dev/${f}-map
-            if [ -f "$g" ];then
-                sed -i "s;/dev/mmcblk0p1;$sdcard;g" "$g"
-                dmctl create sd_$f $(cat "$g")
-            fi
-        done
-
-        refreshMapper
-        mount -o ro /dev/block/mapper/sd_system /dev/targetSD
+        mount -o ro,loop /dev/mntSD/Diverter/system.img /dev/targetSD
     fi
 fi
 
@@ -248,9 +226,9 @@ if $foundTarget;then
     mount -o move /target_tmp/optics /target/optics
     #TODO: Other mount points for non-GSI (system_ext? product?)
 
-    if [ "$target" = "sdcard" ] && [ -f /dev/product-map ];then
+    if [ "$target" = "sdcard" ] && [ -f /dev/mntSD/Diverter/product.img ];then
         umount /target/product
-        mount -o ro /dev/block/mapper/sd_product /target/product
+        mount -o ro,loop /dev/mntSD/Diverter/product.img /target/product
     fi
 fi
 
@@ -266,13 +244,28 @@ fi
 # mount -o bind /dev/vendor_default.prop /target/vendor/default.prop
 
 if grep DOWN /dev/choice;then
+    # Patch sepolicy
+    mkdir -p /dev/selinux
+    cp /target/system/etc/selinux/plat_sepolicy.cil /dev/selinux/
+    # Make the kernel context permissive so that bind mounts work
+    # TODO: Grant more specific permissions instead of this
+    sed -i -E -e "s;\\(type kernel\\);(type kernel)\n(typepermissive kernel);" /dev/selinux/plat_sepolicy.cil
+    mount -o bind /dev/selinux/plat_sepolicy.cil /target/system/etc/selinux/plat_sepolicy.cil
+
+    # Create loop device for userdata on sdcard
+    mkdir -p /target/dev/block/
+    mknod -m 0660 /target/dev/block/sd_userdata b 7 8
+    losetup /target/dev/block/sd_userdata /dev/mntSD/Diverter/userdata.img
+
     mkdir -p /dev/fstabs
     for fstab in $(cd /target/vendor/etc/; echo fstab*);do
         cp /target/vendor/etc/$fstab /dev/fstabs/$fstab
         sed -i /sdcard/d /dev/fstabs/$fstab
-        sed -i -E -e 's;([^ ]*)(.*/data\b.*);/dev/block/mapper/sd_userdata \2;g' /dev/fstabs/$fstab
+        sed -i -E -e 's;([^ ]*)(.*/data\b.*);/dev/block/sd_userdata \2;g' /dev/fstabs/$fstab
         sed -i -E -e '/sd_userdata/s;f2fs;ext4;g' /dev/fstabs/$fstab
         sed -i -E -e '/sd_userdata/s;fsync_mode=nobarrier,reserve_root=32768,;;g' /dev/fstabs/$fstab
+        # TODO: figure out why FBE is broken
+        sed -i -E -e '/sd_userdata/s;,fileencryption=.*;;g' /dev/fstabs/$fstab
         sed -i '/product/d' /dev/fstabs/$fstab
     done
 
