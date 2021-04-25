@@ -257,9 +257,9 @@ if grep DOWN /dev/choice;then
     mkdir -p /dev/override/selinux
     cp /target/system/etc/selinux/plat_sepolicy.cil /dev/override/selinux/
     # Allow kernel to read / write unlabeled files for our loop mount to work
-    echo "(allow kernel unlabeled (file (read write create)))" >> /dev/override/selinux/plat_sepolicy.cil
+    echo "(allow kernel unlabeled (file (read write)))" >> /dev/override/selinux/plat_sepolicy.cil
     # Allow kernel to read / write tmpfs files for our ramdisk to work
-    echo "(allow kernel tmpfs (file (read write create)))" >> /dev/override/selinux/plat_sepolicy.cil
+    echo "(allow kernel tmpfs (file (read write)))" >> /dev/override/selinux/plat_sepolicy.cil
 
     # Patch sepolicy file_contexts to label our userdata loop device correctly
     # This is required for FBE (otherwise vdc will fail)
