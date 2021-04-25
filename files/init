@@ -251,6 +251,12 @@ if grep DOWN /dev/choice;then
     echo "(allow kernel unlabeled (file (read write create)))" >> /dev/selinux/plat_sepolicy.cil
     mount -o bind /dev/selinux/plat_sepolicy.cil /target/system/etc/selinux/plat_sepolicy.cil
 
+    # Patch sepolicy file_contexts to label our userdata loop device correctly
+    # This is required for FBE (otherwise vdc will fail)
+    cp /target/system/etc/selinux/plat_file_contexts /dev/selinux/
+    echo "/dev/block/sd_userdata    u:object_r:userdata_block_device:s0" >> /dev/selinux/plat_file_contexts
+    mount -o bind /dev/selinux/plat_file_contexts /target/system/etc/selinux/plat_file_contexts
+
     # Create loop device for userdata on sdcard
     mkdir -p /target/dev/block/
     mknod -m 0660 /target/dev/block/sd_userdata b 7 8
@@ -264,7 +270,7 @@ if grep DOWN /dev/choice;then
         sed -i -E -e '/sd_userdata/s;f2fs;ext4;g' /dev/fstabs/$fstab
         sed -i -E -e '/sd_userdata/s;fsync_mode=nobarrier,reserve_root=32768,;;g' /dev/fstabs/$fstab
         # TODO: figure out why FBE is broken
-        sed -i -E -e '/sd_userdata/s;,fileencryption=.*;;g' /dev/fstabs/$fstab
+        #sed -i -E -e '/sd_userdata/s;,fileencryption=.*;;g' /dev/fstabs/$fstab
         sed -i '/product/d' /dev/fstabs/$fstab
     done
 
