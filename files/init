@@ -176,6 +176,10 @@ if ! $foundTarget && [ -n "$sdcard" ] && [ -b "$sdcard" ];then
     if [ -f /dev/mntSD/Diverter/system.img ];then
         if [ ! -f /dev/mntSD/Diverter/userdata.img ];then
             fallocate -l 8G /dev/mntSD/Diverter/userdata.img
+            if [ $? -ne 0 ];then
+              # Fall back to dd if `fallocate` failed
+              dd if=/dev/zero of=/dev/mntSD/Diverter/userdata.img bs=$((1024*1024)) count=8k
+            fi
             mke2fs -t ext4 -b 4096 -O uninit_bg /dev/mntSD/Diverter/userdata.img
         fi
         mount -o ro,loop /dev/mntSD/Diverter/system.img /dev/targetSD
