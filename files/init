@@ -244,45 +244,62 @@ fi
 # mount -o bind /dev/vendor_default.prop /target/vendor/default.prop
 
 if grep DOWN /dev/choice;then
-    # Patch sepolicy
-    mkdir -p /dev/selinux
-    cp /target/system/etc/selinux/plat_sepolicy.cil /dev/selinux/
-    # Allow kernel to read / write unlabeled files for our loop mount to work
-    echo "(allow kernel unlabeled (file (read write create)))" >> /dev/selinux/plat_sepolicy.cil
-    mount -o bind /dev/selinux/plat_sepolicy.cil /target/system/etc/selinux/plat_sepolicy.cil
-
-    # Patch sepolicy file_contexts to label our userdata loop device correctly
-    # This is required for FBE (otherwise vdc will fail)
-    cp /target/system/etc/selinux/plat_file_contexts /dev/selinux/
-    echo "/dev/block/sd_userdata    u:object_r:userdata_block_device:s0" >> /dev/selinux/plat_file_contexts
-    mount -o bind /dev/selinux/plat_file_contexts /target/system/etc/selinux/plat_file_contexts
-
     # Create loop device for userdata on sdcard
     mkdir -p /target/dev/block/
     mknod -m 0660 /target/dev/block/sd_userdata b 7 8
     losetup /target/dev/block/sd_userdata /dev/mntSD/Diverter/userdata.img
 
-    mkdir -p /dev/fstabs
+    # Create a temporary directory to store our overrides
+    # We will apply the correct SELinux labels in bulk later
+    mkdir -p /dev/override
+
+    # Patch sepolicy
+    mkdir -p /dev/override/selinux
+    cp /target/system/etc/selinux/plat_sepolicy.cil /dev/override/selinux/
+    # Allow kernel to read / write unlabeled files for our loop mount to work
+    echo "(allow kernel unlabeled (file (read write create)))" >> /dev/override/selinux/plat_sepolicy.cil
+    # Allow kernel to read / write tmpfs files for our ramdisk to work
+    echo "(allow kernel tmpfs (file (read write create)))" >> /dev/override/selinux/plat_sepolicy.cil
+
+    # Patch sepolicy file_contexts to label our userdata loop device correctly
+    # This is required for FBE (otherwise vdc will fail)
+    cp /target/system/etc/selinux/plat_file_contexts /dev/override/selinux/
+    echo "/dev/block/sd_userdata    u:object_r:userdata_block_device:s0" >> /dev/override/selinux/plat_file_contexts
+
+    mkdir -p /dev/override/fstabs
     for fstab in $(cd /target/vendor/etc/; echo fstab*);do
-        cp /target/vendor/etc/$fstab /dev/fstabs/$fstab
-        sed -i /sdcard/d /dev/fstabs/$fstab
-        sed -i -E -e 's;([^ ]*)(.*/data\b.*);/dev/block/sd_userdata \2;g' /dev/fstabs/$fstab
-        sed -i -E -e '/sd_userdata/s;f2fs;ext4;g' /dev/fstabs/$fstab
-        sed -i -E -e '/sd_userdata/s;fsync_mode=nobarrier,reserve_root=32768,;;g' /dev/fstabs/$fstab
-        # TODO: figure out why FBE is broken
-        #sed -i -E -e '/sd_userdata/s;,fileencryption=.*;;g' /dev/fstabs/$fstab
-        sed -i '/product/d' /dev/fstabs/$fstab
+        cp /target/vendor/etc/$fstab /dev/override/fstabs/$fstab
+        sed -i /sdcard/d /dev/override/fstabs/$fstab
+        sed -i -E -e 's;([^ ]*)(.*/data\b.*);/dev/block/sd_userdata \2;g' /dev/override/fstabs/$fstab
+        sed -i -E -e '/sd_userdata/s;f2fs;ext4;g' /dev/override/fstabs/$fstab
+        sed -i -E -e '/sd_userdata/s;fsync_mode=nobarrier,reserve_root=32768,;;g' /dev/override/fstabs/$fstab
+        sed -i '/product/d' /dev/override/fstabs/$fstab
     done
 
-    mke2fs /dev/ram0
-    #echo '/.* u:object_r:vendor_file:s0' > /dev/file_contexts
-    echo '/.* u:object_r:vendor_configs_file:s0' > /dev/file_contexts
-    e2fsdroid -S /dev/file_contexts -f /dev/fstabs -e -a / -u '0 0 1' /dev/ram0
+    # Label the overridden files with the correct SELinux contexts using an in-memory fs
+    # /dev/ram0 may not be enough for sepolicy on some devices; it cannot always be grown,
+    # so just create our own ramdisk image
+    dd if=/dev/zero of=/dev/ramdisk.img bs=1k count=20480
+    mke2fs /dev/ramdisk.img
+    # Default context for everything in the ramdisk (including directories)
+    # If missing, e2fsdroid will abort and leave the filesystem corrupted
+    echo '/.* u:object_r:tmpfs:s0' > /dev/file_contexts
+    # fstab context
+    echo '/fstabs/.* u:object_r:vendor_configs_file:s0' >> /dev/file_contexts
+    # sepolicy configuration contexts
+    echo '/selinux/plat_file_contexts u:object_r:file_contexts_file:s0' >> /dev/file_contexts
+    echo '/selinux/plat_sepolicy.cil u:object_r:sepolicy_file:s0' >> /dev/file_contexts
+    # Populate the temporary fs & apply the contexts
+    e2fsdroid -S /dev/file_contexts -f /dev/override -e -a / -u '0 0 1' /dev/ramdisk.img
     mkdir /dev/mntRAM
-    mount /dev/ram0 /dev/mntRAM
+    mount /dev/ramdisk.img /dev/mntRAM
+    # Actually apply the fstab override
     for fstab in $(cd /target/vendor/etc/; echo fstab*);do
-        mount -o bind /dev/mntRAM/$fstab /target/vendor/etc/$fstab
+        mount -o bind /dev/mntRAM/fstabs/$fstab /target/vendor/etc/$fstab
     done
+    # Actually apply the sepolicy override
+    mount -o bind /dev/mntRAM/selinux/plat_file_contexts /target/system/etc/selinux/plat_file_contexts
+    mount -o bind /dev/mntRAM/selinux/plat_sepolicy.cil /target/system/etc/selinux/plat_sepolicy.cil
 fi
 
 # Disable /dev/kmsg rate limiting
