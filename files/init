@@ -253,6 +253,20 @@ if grep DOWN /dev/choice;then
     mknod -m 0660 /target/dev/block/sd_userdata b 7 8
     losetup /target/dev/block/sd_userdata /dev/mntSD/Diverter/userdata.img
 
+    # Force the system to reload sepolicy instead of using precompiled_sepolicy
+    # by overriding the sha256 checksum files
+    # This facilitates the sepolicy patching process below
+    for partition in system product;do
+      policy_name=$partition
+      if [ $partition = system ];then
+        policy_name=plat
+      fi
+
+      if [ -f /target/$partition/etc/selinux/${policy_name}_sepolicy_and_mapping.sha256 ];then
+        mount -o bind /dev/null /target/$partition/etc/selinux/${policy_name}_sepolicy_and_mapping.sha256
+      fi
+    done
+
     # Create a temporary directory to store our overrides
     # We will apply the correct SELinux labels in bulk later
     mkdir -p /dev/override
