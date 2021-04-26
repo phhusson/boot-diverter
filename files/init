@@ -250,7 +250,9 @@ fi
 if grep DOWN /dev/choice;then
     # Create loop device for userdata on sdcard
     mkdir -p /target/dev/block/
-    mknod -m 0660 /target/dev/block/sd_userdata b 7 8
+    # Minor code / 8 correspond to the ID of the loop device.
+    # Set it to 256 so that nothing else may conflict with ours
+    mknod -m 0660 /target/dev/block/sd_userdata b 7 256
     losetup /target/dev/block/sd_userdata /dev/mntSD/Diverter/userdata.img
 
     # Force the system to reload sepolicy instead of using precompiled_sepolicy
