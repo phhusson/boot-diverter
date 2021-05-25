@@ -202,6 +202,21 @@ if ! $foundTarget && [ -n "$sdcard" ] && [ -b "$sdcard" ];then
         refreshMapper
         mount -o ro /dev/block/mapper/sd_system /dev/targetSD
     fi
+
+    # That's a "GNU/Linux" without data part
+    if [ -f /dev/mntSD/Diverter/rootfs.img ];then
+        # run twice to de-hole/de-sparse
+        linear-map /dev/mntSD/Diverter/rootfs.img > /dev/system-map
+        linear-map /dev/mntSD/Diverter/rootfs.img > /dev/system-map
+        umount /dev/mntSD
+        sed -i "s;/dev/mmcblk0p1;$sdcard;g" /dev/system-map
+        dmctl create sd_system $(cat /dev/system-map)
+        gnu=true
+
+        refreshMapper
+        mount -o rw /dev/block/mapper/sd_system /dev/targetSD
+        mkdir -p /dev/targetSD/ramdisk
+    fi
 fi
 
 vibrate() {
@@ -233,7 +248,7 @@ if grep DOWN /dev/choice;then
     target=sdcard
 fi
 
-if $foundTarget;then
+if $foundTarget && ( [ -z "$gnu" ] || [ -z "$sdcard" ] );then
     mount -o move /target_tmp/apex /target/apex
     mount -o move /target_tmp/dev /target/dev
     mount -o move /target_tmp/proc /target/proc
@@ -254,6 +269,33 @@ if $foundTarget;then
     fi
 fi
 
+if [ -n "$gnu" ] && [ -n "$sdcard" ];then
+    # Android's init will create mount namespaces if apex are updatable,
+    # which is currently not supported by the chroot Android container method
+    # And it's not like we're going 
+    cp /vendor/build.prop /dev/vendor-buildprop
+    sed -i -e '/apex.updatable/d' /dev/vendor-buildprop
+    mount -o bind /dev/vendor-buildprop /vendor/build.prop
+
+    # See https://github.com/ubports/porting-notes/wiki/Halium-9#generating-udev-rules
+    cat /vendor/ueventd*.rc | grep ^/dev | sed -e 's/^\/dev\///' | awk '{printf "ACTION==\"add\", KERNEL==\"%s\", OWNER=\"%s\", GROUP=\"%s\", MODE=\"%s\"\n",$1,$3,$4,$2}' | sed -e 's/\r//' > /dev/targetSD/etc/udev/rules.d/70-boot_diverter_generated.rules
+
+    # See https://gitlab.com/ubports/community-ports/android10/unihertz-titan/unihertz-titan/-/blob/android-10/overlay/usr/share/ubuntu-touch-session/usc-wrapper
+    sed -i -E 's/console-provider=vt/console-provider=none/g' /dev/targetSD/usr/share/ubuntu-touch-session/usc-wrapper
+
+    # We need GNU init to mount /vendor after mounting android.img
+    # Also we need to rbind, because we want our vendor/build.prop change to stick
+    mount -o move /target_tmp/vendor /vendor
+    if ! grep -q /ramdisk/vendor /dev/targetSD/init;then
+        sed -i -E '/mount_android_partitions "\/var/ a mount --rbind /ramdisk/vendor /android/vendor' /dev/targetSD/init
+    fi
+
+    #TODO: See https://gitlab.com/ubports/community-ports/android10/unihertz-titan/unihertz-titan/-/blob/android-10/overlay/system/etc/init/lxc-android-config.override
+
+
+    # echo 1 > /dev/wmtWifi
+fi
+
 # UNCOMMENTME: To grab kernel logs to ttyGS0 you'll need SELinux permissive
 #(cat /proc/cmdline |sed -E 's/androidboot.selinux=[^ ]*//g' |tr -d '\n'; echo " " androidboot.selinux=permissive ) > /dev/cmdline
 #chmod 0400 /dev/cmdline
@@ -265,7 +307,8 @@ fi
 # chmod 0400 /dev/vendor_default.prop
 # mount -o bind /dev/vendor_default.prop /target/vendor/default.prop
 
-if grep DOWN /dev/choice;then
+#TODO : userdata of gnu?
+if grep DOWN /dev/choice && [ -z "$gnu" ];then
     mkdir -p /dev/fstabs
     for fstab in $(cd /target/vendor/etc/; echo fstab*);do
         cp /target/vendor/etc/$fstab /dev/fstabs/$fstab
@@ -307,23 +350,27 @@ cat /dev/kmsg > /dev/ttyGS0 &
 sleep 5
 
 # COMMENTME: To grab kernel logs to ttyGS0 you need to keep usb gadget open
-echo > $gadget/UDC
-rm $gadget/configs/c.1/f4
-rm $gadget/configs/c.1/f3
-rm $gadget/configs/c.1/f2
-rm $gadget/configs/c.1/f1
-rmdir $gadget/configs/c.1/strings/0x409/
-rmdir $gadget/configs/c.1/strings/0x409
-rmdir $gadget/configs/c.1
-rmdir $gadget/configs/c.1/
+#echo > $gadget/UDC
+#rm $gadget/configs/c.1/f4
+#rm $gadget/configs/c.1/f3
+#rm $gadget/configs/c.1/f2
+#rm $gadget/configs/c.1/f1
+#rmdir $gadget/configs/c.1/strings/0x409/
+#rmdir $gadget/configs/c.1/strings/0x409
+#rmdir $gadget/configs/c.1
+#rmdir $gadget/configs/c.1/
 # END OF COMMENTME
 
-echo HAHA > /dev/kmsg
 cd /target
-echo HIHI > /dev/kmsg
-pivot_root /target debug_ramdisk
-echo HEHE > /dev/kmsg
-exec /debug_ramdisk/bin/busybox chroot . /system/bin/init selinux_setup > /dev/kmsg
+if [ -n "$gnu" ];then
+    #GNU/Linux prefer our own /dev done with mdev, rather than Android-ified /dev
+    mount -o move /dev /target/dev
+    pivot_root /target ramdisk
+    exec /ramdisk/bin/busybox chroot . /init > /dev/ttyGS0
+else
+    pivot_root /target debug_ramdisk
+    exec /debug_ramdisk/bin/busybox chroot . /system/bin/init selinux_setup > /dev/kmsg
+fi
 
 #telnetd -F
 
